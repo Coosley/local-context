@@ -1,7 +1,7 @@
 # Installs/updates ctx globally (Windows). No git required.
 #   irm https://raw.githubusercontent.com/Coosley/local-context/main/install.ps1 | iex
 # Installs the latest tagged release if one exists, otherwise the main branch.
-# Pin anything: $env:CTX_REF = 'v0.2.0'  (a tag, branch or full commit SHA)
+# Pin anything: $env:CTX_REF = 'v0.1.0'  (a tag, branch or full commit SHA)
 # Other overrides: $env:CTX_REPO='owner/name'; $env:CTX_BRANCH='main'
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

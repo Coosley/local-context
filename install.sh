@@ -2,7 +2,7 @@
 # Installs/updates ctx globally (macOS/Linux). No git required.
 #   curl -fsSL https://raw.githubusercontent.com/Coosley/local-context/main/install.sh | sh
 # Installs the latest tagged release if one exists, otherwise the main branch.
-# Pin anything: CTX_REF=v0.2.0 (a tag, branch or full commit SHA)
+# Pin anything: CTX_REF=v0.1.0 (a tag, branch or full commit SHA)
 # Other overrides: CTX_REPO=owner/name CTX_BRANCH=main CTX_HOME=~/.local-context CTX_BIN=~/.local/bin
 set -eu
 REPO="${CTX_REPO:-Coosley/local-context}"

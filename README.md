@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/Coosley/local-context/main/install.
 
 This downloads the latest release (or `main` if there is none) to `~/.local-context` and adds a `ctx` command to your PATH. Open a new terminal afterwards.
 
-Piping a script to a shell is a trust decision. Read [install.ps1](install.ps1) or [install.sh](install.sh) first, and for maximum assurance pin a tag or commit: `CTX_REF=v0.2.0` (macOS/Linux) or `$env:CTX_REF='v0.2.0'` (PowerShell) before running the installer. See [SECURITY.md](SECURITY.md).
+Piping a script to a shell is a trust decision. Read [install.ps1](install.ps1) or [install.sh](install.sh) first, and for maximum assurance pin a tag or commit: `CTX_REF=v0.1.0` (macOS/Linux) or `$env:CTX_REF='v0.1.0'` (PowerShell) before running the installer. See [SECURITY.md](SECURITY.md).
 
 ## Quick start
 
