@@ -1,6 +1,7 @@
 name: publish-npm
 # Publishes @coosley/local-context to npm when a GitHub release is published.
 # One-time setup: add an npm automation token as the repository secret NPM_TOKEN.
+# Without that secret the workflow runs its checks and skips publishing (publish by hand with `npm publish --access public`).
 on:
   release:
     types: [published]
@@ -10,6 +11,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,6 +28,11 @@ jobs:
       - run: sh tests/run.sh
         env:
           CTX_SKIP_EVALS: "1"
-      - run: npm publish --provenance --access public
+      - name: Publish to npm
+        if: env.NPM_TOKEN != ''
+        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Note when publishing was skipped
+        if: env.NPM_TOKEN == ''
+        run: echo "NPM_TOKEN is not set, so nothing was published. Run npm publish --access public from a logged-in machine."

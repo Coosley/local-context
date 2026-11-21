@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+- README documents the npm package (`npx @coosley/local-context init`, `npm install -g @coosley/local-context`).
+- The npm publish workflow now skips publishing, instead of failing, when the `NPM_TOKEN` secret isn't set.
+
 ## 0.1.0 (first release)
 - `.context/` templates for any agent in any harness: protocol (`START_HERE.md`), `STATE.md`, goals, plans, backlog, don'ts, preferences, architecture, design, conventions, deployment, infrastructure, security, workflow, decisions, gotchas, log, sessions.
 - Status-word item tracking with percentages (`NOT STARTED`, `IN PROGRESS`, `IN REVIEW`, `BLOCKED`, `FAILED`, `ABANDONED`, `COMPLETED`).
