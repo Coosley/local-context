@@ -11,7 +11,18 @@ AI agents forget everything between sessions. `ctx` gives each project a `.conte
 - **Checked:** `ctx doctor` validates items, catches secrets, stale work and context bloat.
 - **Zero dependencies:** a PowerShell script and a POSIX shell script, both covered by tests and CI.
 
-## Install (once per machine)
+## Install
+
+**With npm** (any OS, Node 16+):
+
+```sh
+npx @coosley/local-context init          # run in a workspace, nothing to install
+npm install -g @coosley/local-context    # or install once to get the `ctx` command
+```
+
+After a global install, use `ctx init`, `ctx status` and the rest. Update with `npm install -g @coosley/local-context@latest` and remove with `npm uninstall -g @coosley/local-context`.
+
+**Without Node: one-line installer** (once per machine)
 
 Windows (PowerShell):
 ```powershell
@@ -74,7 +85,7 @@ That appends a two-line pointer to those files and excludes them from git if the
 | `ctx update [ref]` | Update the tool: latest release, or a tag/branch/commit. |
 | `ctx uninstall -Yes` | Remove the tool (workspaces untouched). Use `--yes` on macOS/Linux. |
 
-`path` defaults to the current folder.
+`path` defaults to the current folder. If you installed with npm, `ctx update` and `ctx uninstall` print the matching npm commands instead.
 
 ## What's in `.context/`
 
@@ -172,11 +183,12 @@ Don't take our word for it. `sh evals/run.sh --agent '<your agent command>'` run
 
 **Is it safe to store secrets in it?** No. The protocol tells agents to record env var names only, never values, and `ctx doctor` scans for secret-looking strings (best effort). Keep it that way.
 
-**Uninstall?** `ctx uninstall -Yes` removes the tool and its PATH entry. Workspace `.context/` folders are yours and stay untouched.
+**Uninstall?** With npm: `npm uninstall -g @coosley/local-context`. With the one-line installer: `ctx uninstall -Yes` removes the tool and its PATH entry. Workspace `.context/` folders are yours and stay untouched.
 
 ## Repo layout
 
 ```
+package.json / bin/ctx.js   the npm package (@coosley/local-context) and its Node launcher
 install.ps1 / install.sh    one-line installers (latest release or pinned ref)
 ctx.ps1 / ctx.sh / ctx.cmd  the ctx command (Windows / POSIX / cmd shim)
 templates/                  files copied into each workspace's .context/
