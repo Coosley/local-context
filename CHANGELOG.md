@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 - `ctx lock` / `unlock` / `locks`: short leases on shared files for parallel agents (stale after 10 minutes, `CTX_LOCK_TTL`). `doctor` reports stale locks.
 - `ctx log "<text>"`: safe append to `log.md`.
 - `ctx agents [file]`: export `team-context/` into a committable `AGENTS.md` block (idempotent; refuses unfilled templates).

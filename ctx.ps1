@@ -173,7 +173,7 @@ function Invoke-Doctor($ctx) {
   if (Test-Path $ld) {
     foreach ($l in Get-ChildItem $ld -Filter *.lock -File) {
       $k = Read-Lock $l.FullName
-      if ($k.Age -gt $LockTtl) { Add-Issue 'WARN' ".locks/$($l.Name)" "stale lock held by $($k.Owner) ($($k.Age)s old); remove with ctx unlock" }
+      if ($k.Age -ge $LockTtl) { Add-Issue 'WARN' ".locks/$($l.Name)" "stale lock held by $($k.Owner) ($($k.Age)s old); remove with ctx unlock" }
       else { Add-Issue 'INFO' ".locks/$($l.Name)" "held by $($k.Owner) ($($k.Age)s)" }
     }
   }
@@ -429,7 +429,7 @@ Bootstrap this workspace's local context. Read .context/START_HERE.md and .conte
     $ctx = Get-Ctx $Path; $ld = Join-Path $ctx '.locks'
     $ls = @(); if (Test-Path $ld) { $ls = @(Get-ChildItem $ld -Filter *.lock -File) }
     if (-not $ls.Count) { Write-Host 'No locks held.' }
-    foreach ($l in $ls) { $k = Read-Lock $l.FullName; Write-Host ("{0}: {1} ({2}s{3})" -f ($l.BaseName), $k.Owner, $k.Age, $(if ($k.Age -gt $LockTtl) { ', STALE' } else { '' })) }
+    foreach ($l in $ls) { $k = Read-Lock $l.FullName; Write-Host ("{0}: {1} ({2}s{3})" -f ($l.BaseName), $k.Owner, $k.Age, $(if ($k.Age -ge $LockTtl) { ', STALE' } else { '' })) }
   }
   'log' {
     $ctx = Get-Ctx '.'; $ws = Split-Path $ctx

@@ -113,7 +113,7 @@ doctor() {
     for l in "$ctx"/.locks/*.lock; do
       [ -f "$l" ] || continue
       lo="$(cut -d'|' -f1 "$l")"; lt="$(cut -d'|' -f2 "$l")"; la=$((now - lt))
-      if [ "$la" -gt "$LOCK_TTL" ]; then echo "WARN  .locks/$(basename "$l"): stale lock held by $lo (${la}s old); remove with ctx unlock" >> "$out"
+      if [ "$la" -ge "$LOCK_TTL" ]; then echo "WARN  .locks/$(basename "$l"): stale lock held by $lo (${la}s old); remove with ctx unlock" >> "$out"
       else echo "INFO  .locks/$(basename "$l"): held by $lo (${la}s)" >> "$out"; fi
     done
   fi
@@ -322,7 +322,7 @@ EOF
     for l in "$ctx"/.locks/*.lock; do
       [ -f "$l" ] || continue
       found=1; lo="$(cut -d'|' -f1 "$l")"; lt="$(cut -d'|' -f2 "$l")"; la=$((now - lt)); stale=""
-      [ "$la" -gt "$LOCK_TTL" ] && stale=", STALE"
+      [ "$la" -ge "$LOCK_TTL" ] && stale=", STALE"
       echo "$(basename "$l" .lock): $lo (${la}s$stale)"
     done
     [ "$found" -eq 1 ] || echo "No locks held."
