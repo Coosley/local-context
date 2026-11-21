@@ -92,6 +92,15 @@ if ((Get-Command sh -ErrorAction SilentlyContinue) -and -not $env:CTX_SKIP_EVALS
 }
 Check 'uninstall refuses on a non-installed copy' ((Run uninstall -Yes) -match 'Refusing')
 Check 'version prints' ((Run version) -match 'ctx \d')
+if (Get-Command node -ErrorAction SilentlyContinue) {
+  $root = Split-Path -Parent $PSScriptRoot
+  Check 'npm launcher runs ctx' ((& node (Join-Path $root 'bin\ctx.js') version 2>&1 | Out-String) -match 'ctx \d')
+  $pv = (& node -p "require('$($root -replace '\\', '/')/package.json').version" | Out-String).Trim()
+  Check 'package.json version matches VERSION' ($pv -eq (Get-Content (Join-Path $root 'VERSION') -TotalCount 1).Trim())
+  Check 'npm launcher handles update' ((& node (Join-Path $root 'bin\ctx.js') update 2>&1 | Out-String) -match 'installed with npm')
+  [void](Run init $ws -Pointer 'X1.md,X2.md')
+  Check 'comma-separated -Pointer creates both files' ((Test-Path "$ws\X1.md") -and (Test-Path "$ws\X2.md"))
+}
 
 Remove-Item $t, $zip -Recurse -Force -ErrorAction SilentlyContinue
 if ($script:fail) { Write-Host "$script:fail test(s) failed"; exit 1 } else { Write-Host 'All tests passed'; exit 0 }

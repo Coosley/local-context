@@ -85,6 +85,11 @@ if [ -z "${CTX_SKIP_EVALS:-}" ]; then
 fi
 run uninstall --yes | grep -q 'Refusing'; check "uninstall refuses on a non-installed copy" $?
 run version | grep -q 'ctx [0-9]'; check "version prints" $?
+if command -v node >/dev/null 2>&1; then
+  (cd "$HERE/.." && node bin/ctx.js version 2>&1) | grep -q 'ctx [0-9]'; check "npm launcher runs ctx" $?
+  [ "$(cd "$HERE/.." && node -p "require('./package.json').version")" = "$(tr -d '\r\n' < "$HERE/../VERSION")" ]; check "package.json version matches VERSION" $?
+  (cd "$HERE/.." && node bin/ctx.js update 2>&1) | grep -q 'installed with npm'; check "npm launcher handles update" $?
+fi
 
 rm -rf "$ws" "$tgz"
 if [ "$fail" -gt 0 ]; then echo "$fail test(s) failed"; exit 1; else echo "All tests passed"; fi

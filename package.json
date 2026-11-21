@@ -1,0 +1,46 @@
+{
+  "name": "@coosley/local-context",
+  "version": "0.1.0",
+  "description": "A local, git-ignored brain for every workspace: plain-Markdown project memory any AI agent in any harness can read and update.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Coosley/local-context.git"
+  },
+  "homepage": "https://github.com/Coosley/local-context#readme",
+  "bugs": {
+    "url": "https://github.com/Coosley/local-context/issues"
+  },
+  "bin": {
+    "local-context": "bin/ctx.js",
+    "ctx": "bin/ctx.js"
+  },
+  "files": [
+    "bin/",
+    "ctx.ps1",
+    "ctx.sh",
+    "templates/",
+    "team-templates/",
+    "adapters/",
+    "evals/",
+    "!evals/results/",
+    "VERSION",
+    "CHANGELOG.md",
+    "SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "ai-agents",
+    "llm",
+    "context-engineering",
+    "developer-tools",
+    "cli",
+    "markdown",
+    "agents-md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

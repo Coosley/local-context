@@ -17,6 +17,8 @@ param(
   [switch]$Yes
 )
 $ErrorActionPreference = 'Stop'
+# -Pointer AGENTS.md,CLAUDE.md arrives as one string when launched via cmd or node: split on commas
+$Pointer = @($Pointer | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch {}
 $self = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $self 'templates'

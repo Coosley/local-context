@@ -1,0 +1,30 @@
+name: publish-npm
+# Publishes @coosley/local-context to npm when a GitHub release is published.
+# One-time setup: add an npm automation token as the repository secret NPM_TOKEN.
+on:
+  release:
+    types: [published]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Check versions match the release tag
+        run: |
+          v="$(tr -d '\r\n' < VERSION)"
+          p="$(node -p "require('./package.json').version")"
+          test "v$v" = "${{ github.event.release.tag_name }}" || { echo "VERSION ($v) does not match tag ${{ github.event.release.tag_name }}"; exit 1; }
+          test "$p" = "$v" || { echo "package.json ($p) does not match VERSION ($v)"; exit 1; }
+      - run: sh tests/run.sh
+        env:
+          CTX_SKIP_EVALS: "1"
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
