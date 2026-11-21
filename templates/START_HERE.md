@@ -144,7 +144,7 @@ Plan login-flow: 3/7 completed (43%)
 - Because `.context/` is shared across branches, an item marked `COMPLETED` on another branch may be missing in the code you are on. Verify in the code before relying on it. Put the branch in the evidence, e.g. `branch feat/x, commit abc123`.
 - Follow the branching rules in `workflow.md`. Never force-push shared branches, rewrite shared history, or merge unless asked.
 - Keep the Active branches table in `workflow.md` current, and set a branch's plan `COMPLETED` after it merges.
-- **Parallel agents or worktrees:** write your notes to `sessions/<date>-<agent>-<slug>.md`. Re-read a shared file right before editing it and change only your own lines; never rewrite a whole shared file from memory. Append to `log.md`, don't edit old entries. Duplicate IDs are an error: if you collide, renumber your own new item.
+- **Parallel agents or worktrees:** write your notes to `sessions/<date>-<agent>-<slug>.md`. Re-read a shared file right before editing it and change only your own lines; never rewrite a whole shared file from memory. Append to `log.md`, don't edit old entries. Duplicate IDs are an error: if you collide, renumber your own new item. If `ctx` is available, run `ctx lock <file> <your-name>` before editing a shared file and `ctx unlock <file> <your-name>` right after (a lock goes stale after 10 minutes; if a file is locked, wait or work on something else), and use `ctx log "<what happened>"` to append to the log safely.
 
 ## 9. Optional tooling
 
@@ -159,6 +159,9 @@ If a `ctx` command exists, these help (none are required, everything works by ha
 | `ctx snapshot` / `history` / `restore` | Local version history of this folder. |
 | `ctx archive` | Moves old log entries and finished plans into `archive/`. |
 | `ctx scan` | Regenerates `scan.md` (repo facts). |
+| `ctx lock` / `unlock` / `locks` | Short leases on shared files when agents work in parallel. |
+| `ctx log "<text>"` | Appends a dated entry to `log.md` safely. |
+| `ctx agents` | Exports `team-context/` into a committable `AGENTS.md` block. |
 
 ## 10. If you are the user's first agent in a new workspace
 

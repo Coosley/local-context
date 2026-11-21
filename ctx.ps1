@@ -72,6 +72,8 @@ function Test-Tracked($ws, $file) {
 function Save-Snapshot($ctx, [string]$msg) {
   if (-not (Test-HasGit)) { return $false }
   if (-not (Test-Path (Join-Path $ctx '.git'))) { [void](Invoke-Git $ctx @('init', '-q')) }
+  $gi = Join-Path $ctx '.gitignore'
+  if (-not (Test-Path $gi)) { [IO.File]::WriteAllText($gi, ".locks/`n", $Utf8) }
   [void](Invoke-Git $ctx @('add', '-A'))
   $st = Invoke-Git $ctx @('status', '--porcelain')
   if (-not $st) { return $false }
@@ -104,6 +106,18 @@ function Show-Progress($ctx) {
     Write-Output ("{0}: {1}/{2} completed ({3}%){4}" -f (Get-Rel $f), [int]$c['COMPLETED'], $den, $pct, $(if ($detail) { " - $detail" } else { '' }))
     $items | Where-Object { $s = $_.Matches[0].Groups[2].Value; $s -ne 'COMPLETED' -and $s -ne 'ABANDONED' } | ForEach-Object { Write-Output ("  " + $_.Line.Trim()) }
   }
+}
+
+# ---------- locks ----------
+$LockTtl = if ($env:CTX_LOCK_TTL) { [int]$env:CTX_LOCK_TTL } else { 600 }
+function Get-Now { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+function Get-LockFile($ctx, $name) {
+  $d = Join-Path $ctx '.locks'; New-Item -ItemType Directory -Force -Path $d | Out-Null
+  Join-Path $d (($name -replace '[\\/:*?"<>| ]', '_') + '.lock')
+}
+function Read-Lock($lf) {
+  $p = (Get-Content $lf -TotalCount 1) -split '\|'
+  [pscustomobject]@{ Owner = $p[0]; Age = (Get-Now) - [int64]$p[1] }
 }
 
 # ---------- doctor ----------
@@ -147,11 +161,20 @@ function Invoke-Doctor($ctx) {
     if ($lines.Count -gt $limit) { Add-Issue 'WARN' $rel "$($lines.Count) lines (budget $limit); run ctx archive or trim" }
   }
   # secrets: every markdown file in the folder, including archive
-  foreach ($f in Get-ChildItem $ctx -Recurse -Include *.md -File | Where-Object { $_.FullName -notmatch '\\\.git\\' }) {
+  foreach ($f in Get-ChildItem $ctx -Recurse -File | Where-Object { $_.FullName -notmatch '\\(\.git|\.locks)\\' -and $_.Length -lt 1MB -and $_.Extension -notin '.zip', '.gz', '.png', '.jpg' }) {
     $rel = Get-Rel $f; $n = 0
     foreach ($ln in (Get-Content $f.FullName -Encoding UTF8)) {
       $n++
       foreach ($pt in $SecretPats) { if ($ln -match $pt) { Add-Issue 'ERROR' "${rel}:$n" 'possible secret (value hidden). Remove it and rotate it'; break } }
+    }
+  }
+  # locks
+  $ld = Join-Path $ctx '.locks'
+  if (Test-Path $ld) {
+    foreach ($l in Get-ChildItem $ld -Filter *.lock -File) {
+      $k = Read-Lock $l.FullName
+      if ($k.Age -gt $LockTtl) { Add-Issue 'WARN' ".locks/$($l.Name)" "stale lock held by $($k.Owner) ($($k.Age)s old); remove with ctx unlock" }
+      else { Add-Issue 'INFO' ".locks/$($l.Name)" "held by $($k.Owner) ($($k.Age)s)" }
     }
   }
   # STATE.md freshness
@@ -379,6 +402,118 @@ Bootstrap this workspace's local context. Read .context/START_HERE.md and .conte
     }
     Write-Host "Created $td. Review it, then commit it: it is shared with your team (unlike .context/)."
   }
+  'lock' {
+    $ctx = Get-Ctx '.'
+    if ($Path -eq '.') { Write-Host 'Usage: ctx lock <file> [owner]   (run in the workspace)'; exit 1 }
+    $owner = if ($Extra) { $Extra } else { $env:USERNAME }
+    $lf = Get-LockFile $ctx $Path; $now = Get-Now
+    if (Test-Path $lf) {
+      $k = Read-Lock $lf
+      if ($k.Owner -ne $owner -and $k.Age -lt $LockTtl) { Write-Host "$Path is locked by $($k.Owner) ($($k.Age)s ago). Wait, or ask them to run: ctx unlock $Path"; exit 1 }
+      Remove-Item $lf -Force
+    }
+    try { $fs = [IO.File]::Open($lf, 'CreateNew', 'Write', 'None'); $b = $Utf8.GetBytes("$owner|$now`n"); $fs.Write($b, 0, $b.Length); $fs.Close() }
+    catch { Write-Host "$Path was just locked by someone else."; exit 1 }
+    Write-Host "Locked $Path for $owner (stale after ${LockTtl}s; re-run to refresh). Release with: ctx unlock $Path"
+  }
+  'unlock' {
+    $ctx = Get-Ctx '.'
+    if ($Path -eq '.') { Write-Host 'Usage: ctx unlock <file> [owner]   (-Yes forces)'; exit 1 }
+    $lf = Get-LockFile $ctx $Path
+    if (-not (Test-Path $lf)) { Write-Host "$Path is not locked."; break }
+    $k = Read-Lock $lf
+    if ($Yes -or -not $Extra -or $k.Owner -eq $Extra) { Remove-Item $lf -Force; Write-Host "Unlocked $Path." }
+    else { Write-Host "$Path is locked by $($k.Owner). Use -Yes to force."; exit 1 }
+  }
+  'locks' {
+    $ctx = Get-Ctx $Path; $ld = Join-Path $ctx '.locks'
+    $ls = @(); if (Test-Path $ld) { $ls = @(Get-ChildItem $ld -Filter *.lock -File) }
+    if (-not $ls.Count) { Write-Host 'No locks held.' }
+    foreach ($l in $ls) { $k = Read-Lock $l.FullName; Write-Host ("{0}: {1} ({2}s{3})" -f ($l.BaseName), $k.Owner, $k.Age, $(if ($k.Age -gt $LockTtl) { ', STALE' } else { '' })) }
+  }
+  'log' {
+    $ctx = Get-Ctx '.'; $ws = Split-Path $ctx
+    if ($Path -eq '.') { Write-Host 'Usage: ctx log "<what happened>" [who]   (run in the workspace)'; exit 1 }
+    $br = if (Test-HasGit) { Invoke-Git $ws @('branch', '--show-current') } else { '' }
+    $who = if ($Extra) { $Extra } else { $env:USERNAME }
+    $entry = "`n## $(Get-Date -Format 'yyyy-MM-dd') - $Path`n- Branch: $(if ($br) { $br } else { 'n/a' })`n- By: $who`n"
+    for ($i = 0; $i -lt 5; $i++) { try { [IO.File]::AppendAllText((Join-Path $ctx 'log.md'), $entry, $Utf8); break } catch { Start-Sleep -Milliseconds 100 } }
+    Write-Host 'Appended to log.md.'
+  }
+  'agents' {
+    $ws = (Resolve-Path '.').Path; $td = Join-Path $ws 'team-context'
+    if (-not (Test-Path $td)) { Write-Host 'No team-context/. Run: ctx team'; exit 1 }
+    $target = if ($Path -ne '.') { $Path } else { 'AGENTS.md' }
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($f in Get-ChildItem $td -Filter *.md -File | Where-Object { $_.Name -ne 'README.md' } | Sort-Object Name) {
+      $tpl = Join-Path $src $f.Name
+      if ((Test-Path $tpl) -and ((Get-Content $f.FullName -Raw).Replace("`r`n", "`n") -eq (Get-Content $tpl -Raw).Replace("`r`n", "`n"))) { continue }
+      $ls = @(Get-Content $f.FullName -Encoding UTF8 | Where-Object { $_ -notmatch '<[^>]{2,}>' })
+      for ($i = 0; $i -lt $ls.Count; $i++) {
+        $l = $ls[$i]
+        if ($l -match '^#+ ') {
+          $j = $i + 1; while ($j -lt $ls.Count -and $ls[$j] -match '^\s*$') { $j++ }
+          if ($j -ge $ls.Count -or $ls[$j] -match '^#+ ') { continue }
+          $l = $l -replace '^(#+)', '$1#'
+        }
+        if ($l -match '^\s*$' -and ($out.Count -eq 0 -or $out[$out.Count - 1] -match '^\s*$')) { continue }
+        $out.Add($l)
+      }
+      if ($out.Count -and $out[$out.Count - 1] -notmatch '^\s*$') { $out.Add('') }
+    }
+    if (-not (($out -join '').Trim())) { Write-Host 'team-context/ is still a template. Fill it in first.'; exit 1 }
+    $block = "<!-- team-context:start -->`n<!-- Generated by ctx agents from team-context/. Edit there, then re-run. -->`n## Team rules`n" + ($out -join "`n").TrimEnd() + "`n<!-- team-context:end -->`n"
+    $tp = Join-Path $ws $target
+    if ((Test-Path $tp) -and ((Get-Content $tp -Raw) -match 'team-context:start')) {
+      $new = [regex]::Replace((Get-Content $tp -Raw), '(?s)<!-- team-context:start -->.*?<!-- team-context:end -->\r?\n?', $block.Replace('$', '$$'))
+      [IO.File]::WriteAllText($tp, $new, $Utf8)
+    } elseif (Test-Path $tp) { [IO.File]::AppendAllText($tp, "`n$block", $Utf8) }
+    else { [IO.File]::WriteAllText($tp, $block, $Utf8) }
+    Write-Host "Wrote team rules into $target. Review and commit it: unlike .context/, it is shared."
+  }
+  'hooks' {
+    $sub = $Path
+    switch ($sub) {
+      'git' {
+        $ws = (Resolve-Path $(if ($Extra) { $Extra } else { '.' })).Path
+        $hd = Invoke-Git $ws @('rev-parse', '--git-path', 'hooks')
+        if (-not $script:GitOk -or -not $hd) { Write-Host 'Not a git repo.'; exit 1 }
+        if (-not [IO.Path]::IsPathRooted($hd)) { $hd = Join-Path $ws $hd }
+        New-Item -ItemType Directory -Force -Path $hd | Out-Null
+        $hf = Join-Path $hd 'post-commit'
+        $block = "# local-context:start`nif command -v ctx >/dev/null 2>&1; then ctx snapshot . ""after commit"" >/dev/null 2>&1 || true`nelif command -v ctx.cmd >/dev/null 2>&1; then ctx.cmd snapshot . ""after commit"" >/dev/null 2>&1 || true; fi`n# local-context:end`n"
+        if ((Test-Path $hf) -and ((Get-Content $hf -Raw) -match 'local-context:start')) { Write-Host 'post-commit hook already installed.'; break }
+        if (Test-Path $hf) { [IO.File]::AppendAllText($hf, "`n$block", $Utf8) } else { [IO.File]::WriteAllText($hf, "#!/bin/sh`n$block", $Utf8) }
+        Write-Host "Installed post-commit hook ($hf): saves a .context snapshot after each commit. Local only, never committed."
+      }
+      'git-remove' {
+        $ws = (Resolve-Path $(if ($Extra) { $Extra } else { '.' })).Path
+        $hd = Invoke-Git $ws @('rev-parse', '--git-path', 'hooks')
+        if (-not [IO.Path]::IsPathRooted($hd)) { $hd = Join-Path $ws $hd }
+        $hf = Join-Path $hd 'post-commit'
+        if (-not (Test-Path $hf)) { Write-Host 'No post-commit hook.'; break }
+        $t = [regex]::Replace((Get-Content $hf -Raw), '(?s)\r?\n?# local-context:start.*?# local-context:end\r?\n?', '')
+        if (($t -replace '#!/bin/sh', '').Trim()) { [IO.File]::WriteAllText($hf, $t, $Utf8) } else { Remove-Item $hf -Force }
+        Write-Host 'Removed the local-context post-commit hook.'
+      }
+      'claude' {
+        Write-Host @'
+Claude Code: make every session start with the context brief. Add this to .claude/settings.local.json (this project, not committed) or ~/.claude/settings.json (all projects), merging with any existing "hooks":
+
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "ctx brief" } ] }
+    ]
+  }
+}
+
+Per the hooks docs, a SessionStart hook's plain-text stdout is added to Claude's context. Add "matcher": "startup" to the group to skip resume/clear/compact. There is no Stop hook here on purpose: plain stdout from Stop does not reach the model. Run ctx wrap yourself, or install the git hook: ctx hooks git
+'@
+      }
+      default { Write-Host 'Usage: ctx hooks <git|git-remove|claude> [workspace]' }
+    }
+  }
   'upgrade' {
     $ctx = Get-Ctx $Path
     Copy-Item (Join-Path $src 'START_HERE.md') (Join-Path $ctx 'START_HERE.md') -Force
@@ -416,6 +551,10 @@ Usage: ctx <command> [path]
   status | brief | doctor | wrap | archive | scan | bootstrap | team
   snapshot [path] [message] | history | backup [path] [dest.zip]
   restore <file> [rev]          restore a file from history (run in the workspace)
+  lock <file> [owner] | unlock <file> [owner] | locks    short leases for shared files (parallel agents)
+  log "<what happened>" [who]   append an entry to log.md safely
+  agents [file]                 export team-context/ into a committable AGENTS.md block
+  hooks <git|git-remove|claude> install the git snapshot hook / print the Claude Code hook
   upgrade                       refresh the protocol, add missing templates
   update [ref]                  update ctx (latest release, or tag/branch/sha)
   uninstall -Yes | version

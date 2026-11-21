@@ -62,6 +62,34 @@ $zip = Join-Path ([IO.Path]::GetTempPath()) ('ctxb-' + [guid]::NewGuid() + '.zip
 Check 'backup writes archive' ((Test-Path $zip) -and (Get-Item $zip).Length -gt 0)
 [void](Run team $ws)
 Check 'team creates team-context' (Test-Path "$ws\team-context\workflow.md")
+
+Push-Location $ws
+Check 'agents refuses an unfilled team-context' ((RunCode agents) -ne 0)
+Set-Content "$ws\team-context\workflow.md" "# Workflow`n`n## Branching`n- Branch from main." -Encoding utf8
+[void](Run agents); [void](Run agents)
+Check 'agents exports team rules idempotently' (((Get-Content "$ws\AGENTS.md" -Raw) -match 'Branch from main') -and (@(Select-String "$ws\AGENTS.md" -Pattern 'team-context:start').Count -eq 1))
+[void](Run lock STATE.md agentA)
+Check 'lock blocks a second owner' ((RunCode lock STATE.md agentB) -ne 0)
+$env:CTX_LOCK_TTL = '0'; $dd = Run doctor; Remove-Item Env:\CTX_LOCK_TTL
+Check 'doctor reports stale locks' ($dd -match 'stale lock')
+[void](Run unlock STATE.md agentA)
+Check 'unlock releases the lock' (-not (Test-Path "$ws\.context\.locks\STATE.md.lock"))
+[void](Run log 'test entry' bot)
+Check 'log appends an entry' ((Get-Content "$ws\.context\log.md" -Raw) -match 'test entry')
+[void](Run hooks git)
+Check 'hooks git installs post-commit' ((Get-Content "$ws\.git\hooks\post-commit" -Raw) -match 'local-context:start')
+[void](Run hooks git-remove)
+Check 'hooks git-remove removes it' (-not (Test-Path "$ws\.git\hooks\post-commit"))
+Check 'hooks claude prints the SessionStart config' ((Run hooks claude) -match 'SessionStart')
+Pop-Location
+
+if ((Get-Command sh -ErrorAction SilentlyContinue) -and -not $env:CTX_SKIP_EVALS) {
+  $runner = Join-Path (Split-Path -Parent $PSScriptRoot) 'evals/run.sh'
+  $g = (& sh $runner --agent 'sh "$EVALS_DIR/mocks/good.sh"' 2>&1 | Out-String)
+  $b = (& sh $runner --agent 'sh "$EVALS_DIR/mocks/bad.sh"' 2>&1 | Out-String)
+  Check 'eval runner: good mock passes all with context' ($g -match 'SUMMARY with pass=6 fail=0')
+  Check 'eval runner: bad mock fails all with context' ($b -match 'SUMMARY with pass=0 fail=6')
+}
 Check 'uninstall refuses on a non-installed copy' ((Run uninstall -Yes) -match 'Refusing')
 Check 'version prints' ((Run version) -match 'ctx \d')
 

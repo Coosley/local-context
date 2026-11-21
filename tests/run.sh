@@ -58,6 +58,31 @@ run backup "$ws" "$tgz" >/dev/null
 [ -s "$tgz" ]; check "backup writes archive" $?
 run team "$ws" >/dev/null
 [ -f "$ws/team-context/workflow.md" ]; check "team creates team-context" $?
+
+(cd "$ws" && sh "$CTX" agents >/dev/null 2>&1); [ $? -ne 0 ]; check "agents refuses an unfilled team-context" $?
+printf '# Workflow\n\n## Branching\n- Branch from main.\n' > "$ws/team-context/workflow.md"
+(cd "$ws" && sh "$CTX" agents >/dev/null 2>&1 && sh "$CTX" agents >/dev/null 2>&1)
+grep -q 'Branch from main' "$ws/AGENTS.md" && [ "$(grep -c 'team-context:start' "$ws/AGENTS.md")" -eq 1 ]; check "agents exports team rules idempotently" $?
+
+(cd "$ws" && sh "$CTX" lock STATE.md agentA >/dev/null 2>&1)
+(cd "$ws" && sh "$CTX" lock STATE.md agentB >/dev/null 2>&1); [ $? -ne 0 ]; check "lock blocks a second owner" $?
+(cd "$ws" && CTX_LOCK_TTL=0 sh "$CTX" doctor 2>&1 | grep -q 'stale lock'); check "doctor reports stale locks" $?
+(cd "$ws" && sh "$CTX" unlock STATE.md agentA >/dev/null 2>&1)
+[ ! -f "$ws/.context/.locks/STATE.md.lock" ]; check "unlock releases the lock" $?
+(cd "$ws" && sh "$CTX" log "test entry" bot >/dev/null 2>&1)
+grep -q 'test entry' "$ws/.context/log.md"; check "log appends an entry" $?
+(cd "$ws" && sh "$CTX" hooks git >/dev/null 2>&1)
+grep -q 'local-context:start' "$ws/.git/hooks/post-commit"; check "hooks git installs post-commit" $?
+(cd "$ws" && sh "$CTX" hooks git-remove >/dev/null 2>&1)
+[ ! -f "$ws/.git/hooks/post-commit" ]; check "hooks git-remove removes it" $?
+run hooks claude | grep -q 'SessionStart'; check "hooks claude prints the SessionStart config" $?
+
+if [ -z "${CTX_SKIP_EVALS:-}" ]; then
+  g="$(sh "$HERE/../evals/run.sh" --agent 'sh "$EVALS_DIR/mocks/good.sh"' 2>&1 | grep SUMMARY)"
+  b="$(sh "$HERE/../evals/run.sh" --agent 'sh "$EVALS_DIR/mocks/bad.sh"' 2>&1 | grep SUMMARY)"
+  echo "$g" | grep -q 'SUMMARY with pass=6 fail=0'; check "eval runner: good mock passes all with context" $?
+  echo "$b" | grep -q 'SUMMARY with pass=0 fail=6'; check "eval runner: bad mock fails all with context" $?
+fi
 run uninstall --yes | grep -q 'Refusing'; check "uninstall refuses on a non-installed copy" $?
 run version | grep -q 'ctx [0-9]'; check "version prints" $?
 

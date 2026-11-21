@@ -66,6 +66,10 @@ That appends a two-line pointer to those files and excludes them from git if the
 | `ctx backup [path] [dest]` | Write a dated zip/tar archive (default `~/.local-context-backups/`). |
 | `ctx team` | Create a committed `team-context/` for shared team rules. |
 | `ctx scan` | Regenerate `scan.md`. |
+| `ctx lock <file> [owner]` / `unlock` / `locks` | Short leases on shared files for parallel agents (stale after 10 minutes). |
+| `ctx log "<text>"` | Append a dated entry to `log.md` safely. |
+| `ctx agents [file]` | Export `team-context/` into a committable `AGENTS.md` block (idempotent). |
+| `ctx hooks git` / `git-remove` / `claude` | Install the local post-commit snapshot hook, or print the Claude Code `SessionStart` hook. |
 | `ctx upgrade` | Refresh the protocol and add any new template files to a workspace. |
 | `ctx update [ref]` | Update the tool: latest release, or a tag/branch/commit. |
 | `ctx uninstall -Yes` | Remove the tool (workspaces untouched). Use `--yes` on macOS/Linux. |
@@ -139,11 +143,12 @@ The full contract is in [templates/START_HERE.md](templates/START_HERE.md).
 
 - Shared rules go in the repo. `ctx team` creates a committed `team-context/` (workflow, security, conventions) that agents read first and that wins over personal context.
 - Plans carry a `Branch:` field, and agents note the current branch each session. They verify in the code before trusting a `COMPLETED` item from another branch.
-- Parallel agents or worktrees write to `sessions/`, re-read a file before editing it, and append rather than rewrite. `ctx doctor` flags duplicate IDs.
+- Parallel agents or worktrees write to `sessions/`, re-read a file before editing it, and append rather than rewrite. They take short leases with `ctx lock`/`unlock` around shared files and append with `ctx log`. `ctx doctor` flags duplicate IDs and stale locks. Locks are advisory: they help agents that cooperate, they don't stop one that ignores them.
+- `ctx agents` exports your committed `team-context/` into an `AGENTS.md` block, so harnesses that auto-read `AGENTS.md` pick up the team rules. It never includes anything from your personal `.context/`.
 
 ## Automation (optional)
 
-See [adapters/](adapters/README.md) for using `ctx brief` as a session-start hook and `ctx wrap` at the end, git hooks that snapshot after commits, and scheduled backups. The protocol works without any of them.
+See [adapters/](adapters/README.md): `ctx hooks claude` prints a Claude Code `SessionStart` hook that injects `ctx brief` (checked against the hooks docs, not yet used in a live session), `ctx hooks git` installs a post-commit snapshot hook, and `ctx wrap` / `ctx backup` fit a scheduler. For other harnesses, point a session-start hook or rules file at `ctx brief`. The protocol works without any of them.
 
 ## How it relates to AGENTS.md, CLAUDE.md, Cursor rules and memory banks
 
@@ -151,7 +156,7 @@ Those files are great for *instructions* (how to work in this repo), and many to
 
 ## Does it help?
 
-Don't take our word for it. [evals/](evals/README.md) has six scenarios and a scorecard for comparing the same agent with and without context.
+Don't take our word for it. `sh evals/run.sh --agent '<your agent command>'` runs six scenarios with and without context against any agent CLI and checks the results mechanically ([evals/](evals/README.md)). The runner itself is tested with mock agents, but it has not yet been run against a real one, so there are no published results.
 
 ## FAQ
 

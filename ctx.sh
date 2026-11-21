@@ -37,6 +37,7 @@ add_exclude() {
 snapshot() {
   has_git || return 1
   [ -d "$ctx/.git" ] || git -C "$ctx" init -q >/dev/null 2>&1
+  [ -f "$ctx/.gitignore" ] || printf '.locks/\n' > "$ctx/.gitignore"
   git -C "$ctx" add -A >/dev/null 2>&1
   [ -n "$(git -C "$ctx" status --porcelain 2>/dev/null)" ] || return 1
   git -C "$ctx" -c user.name=ctx -c user.email=ctx@localhost -c commit.gpgsign=false commit -q --no-verify -m "$1" >/dev/null 2>&1
@@ -44,6 +45,9 @@ snapshot() {
 ctx_files() {
   find "$ctx" -name '*.md' ! -path '*/archive/*' ! -path '*/.git/*' ! -name '_template.md' ! -name START_HERE.md ! -name scan.md | sort
 }
+
+LOCK_TTL="${CTX_LOCK_TTL:-600}"
+lockfile() { mkdir -p "$ctx/.locks"; echo "$ctx/.locks/$(printf '%s' "$1" | tr '/\\: ' '____').lock"; }
 
 progress() {
   ctx_files | while read -r f; do
@@ -98,12 +102,21 @@ doctor() {
     limit=400; [ "$base" = STATE.md ] && limit=40; [ "$base" = log.md ] && limit=300
     [ "$lines" -le "$limit" ] || echo "WARN  $rel: $lines lines (budget $limit); run ctx archive or trim" >> "$out"
   done
-  find "$ctx" -name '*.md' ! -path '*/.git/*' | sort | while read -r f; do
+  find "$ctx" -type f ! -path '*/.git/*' ! -path '*/.locks/*' ! -name '*.zip' ! -name '*.gz' | sort | while read -r f; do
     rel="${f#"$ctx"/}"
-    { grep -nE "$SECRET_A" "$f" 2>/dev/null; grep -niE "$SECRET_B" "$f" 2>/dev/null; } | cut -d: -f1 | sort -un | while read -r n; do
+    { grep -nIE "$SECRET_A" "$f" 2>/dev/null; grep -nIiE "$SECRET_B" "$f" 2>/dev/null; } | cut -d: -f1 | sort -un | while read -r n; do
       echo "ERROR $rel:$n: possible secret (value hidden). Remove it and rotate it" >> "$out"
     done
   done
+  if [ -d "$ctx/.locks" ]; then
+    now="$(date +%s)"
+    for l in "$ctx"/.locks/*.lock; do
+      [ -f "$l" ] || continue
+      lo="$(cut -d'|' -f1 "$l")"; lt="$(cut -d'|' -f2 "$l")"; la=$((now - lt))
+      if [ "$la" -gt "$LOCK_TTL" ]; then echo "WARN  .locks/$(basename "$l"): stale lock held by $lo (${la}s old); remove with ctx unlock" >> "$out"
+      else echo "INFO  .locks/$(basename "$l"): held by $lo (${la}s)" >> "$out"; fi
+    done
+  fi
   if [ -f "$ctx/STATE.md" ]; then
     ds="$(sed -n 's/^Last updated: *\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\).*/\1/p' "$ctx/STATE.md" | head -1)"
     if [ -n "$ds" ]; then
@@ -282,6 +295,119 @@ EOF
     for n in workflow.md security.md conventions.md; do [ -e "$td/$n" ] || cp "$SRC/$n" "$td/$n"; done
     echo "Created $td. Review it, then commit it: it is shared with your team (unlike .context/)."
     ;;
+  lock)
+    file="$ws"; owner="${1:-${USER:-agent}}"; ws="."; need_ctx
+    [ "$file" != "." ] || { echo "Usage: ctx lock <file> [owner]   (run in the workspace)"; exit 1; }
+    lf="$(lockfile "$file")"; now="$(date +%s)"
+    if [ -f "$lf" ]; then
+      holder="$(cut -d'|' -f1 "$lf")"; ts="$(cut -d'|' -f2 "$lf")"; age=$((now - ts))
+      if [ "$holder" != "$owner" ] && [ "$age" -lt "$LOCK_TTL" ]; then echo "$file is locked by $holder (${age}s ago). Wait, or ask them to run: ctx unlock $file"; exit 1; fi
+      rm -f "$lf"
+    fi
+    if ( set -C; printf '%s|%s\n' "$owner" "$now" > "$lf" ) 2>/dev/null; then
+      echo "Locked $file for $owner (stale after ${LOCK_TTL}s; re-run to refresh). Release with: ctx unlock $file"
+    else echo "$file was just locked by someone else."; exit 1; fi
+    ;;
+  unlock)
+    file="$ws"; owner="${1:-}"; ws="."; need_ctx
+    [ "$file" != "." ] || { echo "Usage: ctx unlock <file> [owner|--force]"; exit 1; }
+    lf="$(lockfile "$file")"
+    [ -f "$lf" ] || { echo "$file is not locked."; exit 0; }
+    holder="$(cut -d'|' -f1 "$lf")"
+    if [ -z "$owner" ] || [ "$owner" = "--force" ] || [ "$owner" = "$holder" ]; then rm -f "$lf"; echo "Unlocked $file."
+    else echo "$file is locked by $holder. Use --force to override."; exit 1; fi
+    ;;
+  locks)
+    need_ctx; found=0; now="$(date +%s)"
+    for l in "$ctx"/.locks/*.lock; do
+      [ -f "$l" ] || continue
+      found=1; lo="$(cut -d'|' -f1 "$l")"; lt="$(cut -d'|' -f2 "$l")"; la=$((now - lt)); stale=""
+      [ "$la" -gt "$LOCK_TTL" ] && stale=", STALE"
+      echo "$(basename "$l" .lock): $lo (${la}s$stale)"
+    done
+    [ "$found" -eq 1 ] || echo "No locks held."
+    ;;
+  log)
+    msg="$ws"; who="${1:-${USER:-agent}}"; ws="."; need_ctx
+    [ "$msg" != "." ] || { echo 'Usage: ctx log "<what happened>" [who]   (run in the workspace)'; exit 1; }
+    br=""; has_git && br="$(git -C "$ws" branch --show-current 2>/dev/null || true)"
+    printf '\n## %s - %s\n- Branch: %s\n- By: %s\n' "$(date +%Y-%m-%d)" "$msg" "${br:-n/a}" "$who" >> "$ctx/log.md"
+    echo "Appended to log.md."
+    ;;
+  agents)
+    target="$ws"; ws="."; ws="$(cd "$ws" && pwd)"; td="$ws/team-context"
+    [ -d "$td" ] || { echo "No team-context/. Run: ctx team"; exit 1; }
+    [ "$target" != "." ] || target="AGENTS.md"
+    body="$(for f in "$td"/*.md; do
+      [ "$(basename "$f")" = README.md ] && continue
+      [ -f "$SRC/$(basename "$f")" ] && cmp -s "$f" "$SRC/$(basename "$f")" && continue
+      awk '
+        /<[^>][^>]+>/ { next }
+        { lines[++n] = $0 }
+        END { pb = 1; for (i = 1; i <= n; i++) { l = lines[i]
+          if (l ~ /^#+ /) { j = i + 1; while (j <= n && lines[j] ~ /^[ \t]*$/) j++
+            if (j > n || lines[j] ~ /^#+ /) continue
+            sub(/^#+/, "&#", l) }
+          if (l ~ /^[ \t]*$/) { if (pb) continue; pb = 1 } else pb = 0
+          print l } }' "$f"; echo
+    done)"
+    [ -n "$(printf '%s' "$body" | tr -d '[:space:]')" ] || { echo "team-context/ is still a template. Fill it in first."; exit 1; }
+    bf="$(mktemp)"
+    { echo '<!-- team-context:start -->'; echo '<!-- Generated by ctx agents from team-context/. Edit there, then re-run. -->'; echo '## Team rules'; printf '%s\n' "$body"; echo '<!-- team-context:end -->'; } > "$bf"
+    tp="$ws/$target"
+    if [ -f "$tp" ] && grep -q 'team-context:start' "$tp"; then
+      awk -v bf="$bf" '/<!-- team-context:start -->/ { while ((getline line < bf) > 0) print line; skip = 1; next } /<!-- team-context:end -->/ { skip = 0; next } !skip' "$tp" > "$tp.new" && mv "$tp.new" "$tp"
+    elif [ -f "$tp" ]; then { echo; cat "$bf"; } >> "$tp"
+    else cp "$bf" "$tp"; fi
+    rm -f "$bf"
+    echo "Wrote team rules into $target. Review and commit it: unlike .context/, it is shared."
+    ;;
+  hooks)
+    sub="$ws"; ws="${1:-.}"
+    case "$sub" in
+      git)
+        ws="$(cd "$ws" && pwd)"
+        hd="$(git -C "$ws" rev-parse --git-path hooks 2>/dev/null)" || { echo "Not a git repo."; exit 1; }
+        case "$hd" in /*|[A-Za-z]:*) ;; *) hd="$ws/$hd" ;; esac
+        mkdir -p "$hd"; hf="$hd/post-commit"
+        if [ -f "$hf" ] && grep -q 'local-context:start' "$hf"; then echo "post-commit hook already installed."; exit 0; fi
+        [ -f "$hf" ] || printf '#!/bin/sh\n' > "$hf"
+        cat >> "$hf" <<'EOF'
+# local-context:start
+if command -v ctx >/dev/null 2>&1; then ctx snapshot . "after commit" >/dev/null 2>&1 || true
+elif command -v ctx.cmd >/dev/null 2>&1; then ctx.cmd snapshot . "after commit" >/dev/null 2>&1 || true; fi
+# local-context:end
+EOF
+        chmod +x "$hf"
+        echo "Installed post-commit hook ($hf): saves a .context snapshot after each commit. Local only, never committed."
+        ;;
+      git-remove)
+        ws="$(cd "$ws" && pwd)"
+        hd="$(git -C "$ws" rev-parse --git-path hooks 2>/dev/null)" || { echo "Not a git repo."; exit 1; }
+        case "$hd" in /*|[A-Za-z]:*) ;; *) hd="$ws/$hd" ;; esac
+        hf="$hd/post-commit"; [ -f "$hf" ] || { echo "No post-commit hook."; exit 0; }
+        awk '/# local-context:start/ { skip = 1; next } /# local-context:end/ { skip = 0; next } !skip' "$hf" > "$hf.new" && mv "$hf.new" "$hf"; chmod +x "$hf"
+        if [ -z "$(grep -v '^#!' "$hf" | tr -d '[:space:]')" ]; then rm -f "$hf"; fi
+        echo "Removed the local-context post-commit hook."
+        ;;
+      claude)
+        cat <<'EOF'
+Claude Code: make every session start with the context brief. Add this to .claude/settings.local.json (this project, not committed) or ~/.claude/settings.json (all projects), merging with any existing "hooks":
+
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "ctx brief" } ] }
+    ]
+  }
+}
+
+Per the hooks docs, a SessionStart hook's plain-text stdout is added to Claude's context. Add "matcher": "startup" to the group to skip resume/clear/compact. There is no Stop hook here on purpose: plain stdout from Stop does not reach the model. Run ctx wrap yourself, or install the git hook: ctx hooks git
+EOF
+        ;;
+      *) echo "Usage: ctx hooks <git|git-remove|claude> [workspace]" ;;
+    esac
+    ;;
   upgrade)
     need_ctx
     cp "$SRC/START_HERE.md" "$ctx/START_HERE.md"
@@ -312,6 +438,10 @@ Usage: ctx <command> [path]
   status | brief | doctor | wrap | archive | scan | bootstrap | team
   snapshot [path] [message] | history | backup [path] [dest.tar.gz]
   restore <file> [rev]            restore a file from history (run in the workspace)
+  lock <file> [owner] | unlock <file> [owner|--force] | locks    short leases for shared files
+  log "<what happened>" [who]     append an entry to log.md safely
+  agents [file]                   export team-context/ into a committable AGENTS.md block
+  hooks <git|git-remove|claude>   install the git snapshot hook / print the Claude Code hook
   upgrade                         refresh the protocol, add missing templates
   update [ref]                    update ctx (latest release, or tag/branch/sha)
   uninstall --yes | version

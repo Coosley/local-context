@@ -24,7 +24,9 @@ curl -fsSL "$URL" | tar -xz -C "$tmp" --strip-components=1
 cp -R "$tmp"/. "$DEST"/
 printf '%s\n%s\n' "$REPO" "$BRANCH" > "$DEST/repo.txt"
 chmod +x "$DEST/ctx.sh"
-ln -sf "$DEST/ctx.sh" "$BIN/ctx"
+rm -f "$BIN/ctx"   # also removes a symlink left by an older install, so we never write through it
+printf '#!/bin/sh\nexec sh "%s/ctx.sh" "$@"\n' "$DEST" > "$BIN/ctx"
+chmod +x "$BIN/ctx"
 
 new="$(head -1 "$DEST/VERSION" 2>/dev/null || echo dev)"
 if [ -n "$old" ] && [ "$old" != "$new" ]; then echo "Updated ctx $old -> $new ($REF) in $DEST"; else echo "Installed ctx $new ($REF) in $DEST (command: $BIN/ctx)"; fi
