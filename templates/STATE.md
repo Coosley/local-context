@@ -1,6 +1,7 @@
 # STATE (dashboard — keep under 40 lines)
 
 Last updated: <YYYY-MM-DD> by <agent/user>
+Branch: <current git branch, or n/a>
 
 ## Project
 <one sentence: what this workspace is>
@@ -14,6 +15,7 @@ Last updated: <YYYY-MM-DD> by <agent/user>
 ## Status
 - Phase: <idea | building | stabilising | shipped | maintenance>
 - Health: <green | yellow | red> — <one line why>
+- Progress: <active plan name> — <n/m completed (x%)>
 
 ## Next action
 <the single most useful concrete next step, specific enough for a cold start>

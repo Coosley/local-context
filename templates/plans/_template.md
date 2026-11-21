@@ -1,7 +1,9 @@
 # Plan: <title>
 
 - Created: <YYYY-MM-DD>
-- Status: <draft | active | done | abandoned>
+- Status: <NOT STARTED | IN PROGRESS | COMPLETED | ABANDONED>
+- Progress: 0/0 completed (0%)
+- Branch: <branch this plan lives on, or n/a>
 - Agreed with user: <yes/no>
 - Goal link: <objective in goals.md>
 
@@ -11,11 +13,12 @@
 ## Approach
 <key design/approach points and chosen trade-offs>
 
-## Checklist
-- [ ] <step 1>
-- [ ] <step 2>
+## Items
+Format: `- <ID> | <STATUS> <PCT>% | <title> | <YYYY-MM-DD> | <note or evidence>` (see START_HERE.md section 2)
+Statuses: NOT STARTED 0%, IN PROGRESS 1-99%, IN REVIEW, BLOCKED, FAILED, ABANDONED, COMPLETED 100%
 
-Legend: [ ] pending, [~] in progress, [x] done (date, evidence), [-] dropped (date, reason), [!] blocked (date, why)
+- T1 | NOT STARTED 0% | <step 1>
+- T2 | NOT STARTED 0% | <step 2>
 
 ## Out of scope
 - <explicitly not part of this plan>
