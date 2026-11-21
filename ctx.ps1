@@ -59,7 +59,7 @@ switch ($Command) {
       $pf = Join-Path $ws $p
       $block = "<!-- local-context:start -->`n$bootstrap`n<!-- local-context:end -->`n"
       if ((Test-Path $pf) -and ((Get-Content $pf -Raw) -match 'local-context:start')) { continue }
-      if (Test-Path $pf) { Add-Content $pf "`n$block" } else { Set-Content $pf $block -Encoding utf8 }
+      if (Test-Path $pf) { Add-Content $pf "`n$block" } else { [IO.File]::WriteAllText($pf, $block, (New-Object Text.UTF8Encoding($false))) }
       if (-not (Test-Tracked $ws $p)) { [void](Add-Exclude $ws $p) }
       else { Write-Warning "$p is tracked by git; the pointer block was added but will show up as a change." }
     }
@@ -76,7 +76,7 @@ switch ($Command) {
   'status' {
     $ctx = Join-Path (Resolve-Path $Path).Path '.context'
     if (-not (Test-Path $ctx)) { Write-Host 'No .context here. Run: ctx.ps1 init'; break }
-    Get-Content (Join-Path $ctx 'STATE.md')
+    Get-Content (Join-Path $ctx 'STATE.md') -Encoding UTF8
     Write-Host "`n--- Open checklist items ---"
     $files = @(Get-ChildItem $ctx -Recurse -Include *.md -File | Where-Object { $_.Name -ne '_template.md' -and $_.Name -ne 'START_HERE.md' })
     foreach ($f in $files) {
